@@ -103,9 +103,10 @@ rpl4 <- get_acs(geography = "zcta",
 ############################################################################
 
 #################################################################
-##                 Total Counts                                ##
+##                 RPL1                                        ##
 #################################################################
 
+# Total Counts
 rpl1 <- rpl1 %>%
   mutate(E_POV150 = (below_150_povE),
           E_UNEMP = (unemployedE),
@@ -116,23 +117,23 @@ rpl1 <- rpl1 %>%
           E_NOHSDP = (no_high_schoolE),
           E_UNINSUR = (uninsured_popE))
 
-#################################################################
-##                 Percentages                                  ##
-#################################################################
-
+# Percentages
 rpl1 <- rpl1 %>%
   left_join(basic_demo %>% select(GEOID, tot_popE), by = "GEOID") %>%
   mutate(EP_POV150 = (E_POV150 / tot_popE) * 100,
           EP_UNEMP = (E_UNEMP / tot_popE) * 100,
           EP_HBURD = (E_HBURD / tot_popE) * 100,
+
+          # docs say to use S0601_C01_033E, but don't call it out
+          # in the data collection phase.
           EP_NOHSDP = (E_NOHSDP / tot_popE) * 100,
+
+          # docs say to use S2701_C05_001E, but don't call it out
+          # in the data collection phase.
           EP_UNINSUR = (E_UNINSUR / tot_popE) * 100) %>%
   select(-tot_popE)
 
-#################################################################
-##                 Percentile Ranks                             ##
-#################################################################
-
+# Percentile Ranks
 rpl1 <- rpl1 %>%
   mutate(EPL_POV150 = percent_rank(EP_POV150),
           EPL_UNEMP = percent_rank(EP_UNEMP),
@@ -140,10 +141,7 @@ rpl1 <- rpl1 %>%
           EPL_NOHSDP = percent_rank(EP_NOHSDP),
           EPL_UNINSUR = percent_rank(EP_UNINSUR))
 
-#################################################################
-##                 Final RPL Calculations                       ##
-#################################################################
-
+# Final RPL1 Calculations
 rpl1 <- rpl1 %>%
   mutate(SPL_THEME1 = (EPL_POV150 +
                         EPL_UNEMP +
@@ -153,3 +151,34 @@ rpl1 <- rpl1 %>%
 
 rpl1 <- rpl1 %>%
   mutate(RPL_THEME1 = percent_rank(SPL_THEME1))
+
+#################################################################
+##                 RPL3                                        ##
+#################################################################
+
+# Total Counts
+rpl3 <- rpl3 %>%
+  mutate(E_MINRTY = (DP05_0071E +
+                      DP05_0078E +
+                      DP05_0079E +
+                      DP05_0080E +
+                      DP05_0081E +
+                      DP05_0082E +
+                      DP05_0083E))
+
+# Percentages
+rpl3 <- rpl3 %>%
+  left_join(basic_demo %>% select(GEOID, tot_popE), by = "GEOID") %>%
+  mutate(EP_MINRTY = (E_MINRTY / tot_popE) * 100) %>%
+  select(-tot_popE)
+
+# Percentile Ranks
+rpl3 <- rpl3 %>%
+  mutate(EPL_MINRTY = percent_rank(EP_MINRTY))
+
+# Final RPL3 Calculations
+rpl3 <- rpl3 %>%
+  mutate(SPL_THEME3 = (EPL_MINRTY))
+
+rpl3 <- rpl3 %>%
+  mutate(RPL_THEME3 = percent_rank(SPL_THEME3))
