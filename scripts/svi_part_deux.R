@@ -189,8 +189,9 @@ rpl2 <- rpl2 %>%
          EPL_DISAB = percent_rank(EP_DISABLE),
          EPL_SINGPNT = percent_rank(EP_SNGPNT),
          EPL_LIMENG = percent_rank(EP_LIMENG),
-         RPL_THEME2 = EPL_AGE65 + EPL_AGE17 +
-         EPL_DISAB + EPL_SINGPNT + EPL_LIMENG)
+         SPL_THEME2 = EPL_AGE65 + EPL_AGE17 +
+         EPL_DISAB + EPL_SINGPNT + EPL_LIMENG,
+         RPL_THEME2 = percent_rank(SPL_THEME2))
 
 rpl2 <- rpl2 %>%
   as_tibble() %>%
@@ -248,8 +249,9 @@ rpl4 <- rpl4 %>%
          EPL_CROWD = percent_rank(EP_CROWD),
          EPL_NOVEH = percent_rank(EP_NOVEH),
          EPL_GROUPQ = percent_rank(EP_GROUPQ),
-         RPL_THEME4 = EPL_MUNIT + EPL_MOBILE +
-           EPL_CROWD + EPL_NOVEH + EPL_GROUPQ)
+         SPL_THEME4 = EPL_MUNIT + EPL_MOBILE +
+           EPL_CROWD + EPL_NOVEH + EPL_GROUPQ,
+         RPL_THEME4 = percent_rank(SPL_THEME4))
 
 rpl4 <- rpl4 %>%
   as_tibble() %>%
