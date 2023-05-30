@@ -102,4 +102,54 @@ rpl4 <- get_acs(geography = "zcta",
 ############################################################################
 ############################################################################
 
+#################################################################
+##                 Total Counts                                ##
+#################################################################
 
+rpl1 <- rpl1 %>%
+  mutate(E_POV150 = (below_150_povE),
+          E_UNEMP = (unemployedE),
+          E_HBURD = (hsg_inc_20kE +
+                      hsg_inc_20_35kE +
+                      hsg_inc_35_49kE +
+                      hsg_inc_50_75kE),
+          E_NOHSDP = (no_high_schoolE),
+          E_UNINSUR = (uninsured_popE))
+
+#################################################################
+##                 Percentages                                  ##
+#################################################################
+
+rpl1 <- rpl1 %>%
+  left_join(basic_demo %>% select(GEOID, tot_popE), by = "GEOID") %>%
+  mutate(EP_POV150 = (E_POV150 / tot_popE) * 100,
+          EP_UNEMP = (E_UNEMP / tot_popE) * 100,
+          EP_HBURD = (E_HBURD / tot_popE) * 100,
+          EP_NOHSDP = (E_NOHSDP / tot_popE) * 100,
+          EP_UNINSUR = (E_UNINSUR / tot_popE) * 100) %>%
+  select(-tot_popE)
+
+#################################################################
+##                 Percentile Ranks                             ##
+#################################################################
+
+rpl1 <- rpl1 %>%
+  mutate(EPL_POV150 = percent_rank(EP_POV150),
+          EPL_UNEMP = percent_rank(EP_UNEMP),
+          EPL_HBURD = percent_rank(EP_HBURD),
+          EPL_NOHSDP = percent_rank(EP_NOHSDP),
+          EPL_UNINSUR = percent_rank(EP_UNINSUR))
+
+#################################################################
+##                 Final RPL Calculations                       ##
+#################################################################
+
+rpl1 <- rpl1 %>%
+  mutate(SPL_THEME1 = (EPL_POV150 +
+                        EPL_UNEMP +
+                        EPL_HBURD +
+                        EPL_NOHSDP +
+                        EPL_UNINSUR))
+
+rpl1 <- rpl1 %>%
+  mutate(RPL_THEME1 = percent_rank(SPL_THEME1))
