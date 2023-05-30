@@ -228,6 +228,9 @@ rpl3 <- rpl3 %>%
 rpl3 <- rpl3 %>%
   mutate(RPL_THEME3 = percent_rank(SPL_THEME3))
 
+rpl3 <- rpl3 %>%
+  as_tibble()
+
 ##----------------------------------------------------------------
 ##                      RPL 4 Calculations                       -
 ##----------------------------------------------------------------
@@ -256,3 +259,15 @@ rpl4 <- rpl4 %>%
 rpl4 <- rpl4 %>%
   as_tibble() %>%
   select(-geometry)
+
+#################################################################
+##                 Combined SVI                                ##
+#################################################################
+
+svi <- rpl1 %>%
+  left_join(rpl2, by = "GEOID") %>%
+  left_join(rpl3, by = "GEOID") %>%
+  left_join(rpl4, by = "GEOID") %>%
+  mutate(SPL_THEMES = (SPL_THEME1 + SPL_THEME2 +
+                       SPL_THEME3 + SPL_THEME4)) %>%
+  mutate(RPL_THEMES = percent_rank(SPL_THEMES))
