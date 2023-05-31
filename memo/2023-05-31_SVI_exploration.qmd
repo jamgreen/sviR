@@ -1,0 +1,90 @@
+---
+title: "Philly SVI/COVID Exploration"
+author: "Jamaal"
+format: html
+editor: visual
+urlcolor: blue
+---
+
+# Getting SVI and COVID
+
+After an extended hacking session, Mjumbe and I were able to put together a set of [CDC SVI](https://www.atsdr.cdc.gov/placeandhealth/svi/index.html) functions that should allow us to develop SVI measures, using the current definitions, for most census geographies (generally, tracts on up). Mjumbe was also able to find what we think are [cumulative COVID cases](https://opendataphilly.org/datasets/covid-cumulative-historical-snapshots/) for Philly at the zip code level.
+
+This memo/short report presents a brief exploration of these data sets.
+
+# Data
+
+## Redlining
+
+We're pulling the Philly 1937 redlining maps from the Mapping Inequality website.
+
+```{r}
+#|echo: false
+#|message: false
+#|warning: false
+
+if(!require(pacman)){install.packages("pacman"); library(pacman)}
+p_load(tidyverse, tidycensus, tigris, sf, tmap)
+
+source(file = here::here("scripts/svi_func.R"))
+
+philly_red <- st_read("https://dsl.richmond.edu/panorama/redlining/static/downloads/geojson/PAPhiladelphia1937.geojson")
+
+
+red1 <- tm_shape(philly_red) +
+  tm_fill(col = "holc_grade", palette = c("green4", "blue3", "yellow3", "red3"),
+          labels = "holc_grade", title = "Philly Redlining (1937)") +
+  tm_borders("gray50")
+
+tmap_leaflet(red1)
+```
+
+## SVI
+
+Pulling SVI at the zip code tabulation area (ZCTA) level using the 5-year ACS 2021 sample.
+
+```{r}
+#|echo: false
+#|message: false
+#|warning: false
+
+philly_svi <- build_svi(geography = "zcta", census_year = 2021)
+philly_svi <- philly_svi %>% 
+  st_as_sf()
+
+pa_bound <- counties(state = "PA") %>% 
+  filter(NAME == "Philadelphia") %>% 
+  select(GEOID)
+
+philly_zips <- st_intersects(st_centroid(philly_svi), pa_bound)
+zip_logical <- lengths(philly_zips) > 0
+
+philly_svi <- philly_svi[zip_logical, ]
+
+svi1 <- tm_shape(philly_svi) +
+  tm_fill(col = "RPL_THEMES", palette = "viridis", n = 5, title = "Philly SVI (US Rankings)") +
+  tm_borders("gray50") +
+tm_shape(pa_bound) +
+  tm_fill(alpha = 0) +
+  tm_borders("gray3")
+
+tmap_leaflet(svi1)
+```
+
+## Philly COVID
+
+We have cumulative COVID cases by zip code from city of...this has NOT been fully validated by us, this was found on OpenDataPhilly.
+
+```{r}
+#|echo: false
+#|warning: false
+#|message: false
+
+covid <- read_csv(here::here("memo/data/phl_covid_cases_by_zip_2023-02-28.csv"))
+deaths <- read_csv(here::here("memo/data/covid_deaths_by_zip.csv"))
+hospitalization <- read_csv(here::here("memo/data/covid_hospitalizations_by_zip.csv"))
+
+hospitalization <- hospitalization %>% 
+  filter(hospitalized == "Yes")
+  
+```
