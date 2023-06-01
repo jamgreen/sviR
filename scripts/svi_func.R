@@ -270,7 +270,7 @@ build_rpl4 <- function(geography, census_year, basic_demo) {
     left_join(basic_demo %>% select(GEOID, E_TOTPOP, E_HU), by = "GEOID") %>%
     mutate(EP_MUNIT  = ((E_MUNIT_10_19 + E_MUNIT_20) / E_HU) * 100,
           EP_CROWD   = ((E_CROWD_1 + E_CROWD_2) / E_UNIT) * 100,
-          EP_GROUPQ  = (E_GROUPQ / E_TOTPOP) * 100)
+          EP_GROUPQ  = (E_GROUPQ / E_TOTPOP) * 100) %>%
     as_tibble() %>%
     select(-c("E_TOTPOP", "E_HU", "geometry"))
 
