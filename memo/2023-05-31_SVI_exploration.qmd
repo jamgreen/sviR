@@ -1,7 +1,10 @@
 ---
 title: "Philly SVI/COVID Exploration"
 author: "Jamaal"
-format: html
+format: 
+  html:
+    embed-resources: true
+  pdf: default
 editor: visual
 urlcolor: blue
 ---
@@ -18,64 +21,78 @@ This memo/short report presents a brief exploration of these data sets.
 
 We're pulling the Philly 1937 redlining maps from the Mapping Inequality website.
 
-```{r}
-#|echo: false
-#|message: false
-#|warning: false
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
 
 if(!require(pacman)){install.packages("pacman"); library(pacman)}
-p_load(tidyverse, tidycensus, tigris, sf, tmap)
+p_load(tidyverse, tidycensus, tigris, sf, tmap, stargazer, areal)
+options(scipen = 999)
 
 source(file = here::here("scripts/svi_func.R"))
 
-philly_red <- st_read("https://dsl.richmond.edu/panorama/redlining/static/downloads/geojson/PAPhiladelphia1937.geojson")
+philly_red <- st_read("https://dsl.richmond.edu/panorama/redlining/static/downloads/geojson/PAPhiladelphia1937.geojson", quiet = TRUE)
 
+philly_red <- philly_red %>% 
+  st_transform(crs = 26986)
+
+
+
+```
+
+```{r echo=FALSE}
 
 red1 <- tm_shape(philly_red) +
   tm_fill(col = "holc_grade", palette = c("green4", "blue3", "yellow3", "red3"),
           labels = "holc_grade", title = "Philly Redlining (1937)") +
   tm_borders("gray50")
 
-tmap_leaflet(red1)
+red1
 ```
 
 ## SVI
 
 Pulling SVI at the zip code tabulation area (ZCTA) level using the 5-year ACS 2021 sample.
 
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
 #|echo: false
 #|message: false
 #|warning: false
 
 philly_svi <- build_svi(geography = "zcta", census_year = 2021)
 philly_svi <- philly_svi %>% 
-  st_as_sf()
+  st_as_sf() %>% 
+  st_transform(crs = 26986)
 
 pa_bound <- counties(state = "PA") %>% 
   filter(NAME == "Philadelphia") %>% 
-  select(GEOID)
+  select(GEOID) %>% 
+  st_transform(crs = 26986)
 
 philly_zips <- st_intersects(st_centroid(philly_svi), pa_bound)
 zip_logical <- lengths(philly_zips) > 0
 
 philly_svi <- philly_svi[zip_logical, ]
 
+
+```
+
+```{r echo=FALSE}
+
 svi1 <- tm_shape(philly_svi) +
-  tm_fill(col = "RPL_THEMES", palette = "viridis", n = 5, title = "Philly SVI (US Rankings)") +
+  tm_fill(col = "RPL_THEMES", palette = "viridis", n = 5, title = "Philly SVI") +
   tm_borders("gray50") +
 tm_shape(pa_bound) +
   tm_fill(alpha = 0) +
   tm_borders("gray3")
 
-tmap_leaflet(svi1)
+svi1
 ```
 
 ## Philly COVID
 
 We have cumulative COVID cases by zip code from city of...this has NOT been fully validated by us, this was found on OpenDataPhilly.
 
-```{r}
+```{r echo=FALSE, warning=FALSE, message=FALSE}
 #|echo: false
 #|warning: false
 #|message: false
@@ -85,6 +102,265 @@ deaths <- read_csv(here::here("memo/data/covid_deaths_by_zip.csv"))
 hospitalization <- read_csv(here::here("memo/data/covid_hospitalizations_by_zip.csv"))
 
 hospitalization <- hospitalization %>% 
-  filter(hospitalized == "Yes")
-  
+  filter(hospitalized == "Yes") %>% 
+  select(zip_code, hospital_count = count) %>% 
+  mutate(zip_code = as.character(zip_code))
+
+covid <- covid %>% 
+  select(zip_code, covid_cases = POS) %>% 
+  mutate(zip_code = as.character(zip_code))
+
+deaths <- deaths %>% 
+  select(zip_code, covid_deaths = count) %>% 
+  mutate(zip_code = as.character(zip_code))
+
+philly2 <- reduce(.x = list(philly_svi, covid, hospitalization, deaths), 
+                  .f = left_join, by = c("GEOID" = "zip_code"))
+```
+
+### COVID Cases
+
+Here are the cumulative COVID case rate by zip code.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#|echo: false
+#|warning: false
+#|message: false
+
+philly2 <- philly2 %>% 
+  mutate(covid_per_1000 = (covid_cases/tot_popE)*1000,
+         hospital_per_1000 = (hospital_count/tot_popE)*1000,
+         deaths_per_1000 = (covid_deaths/tot_popE)*1000)
+
+
+cases1 <- tm_shape(shp = philly2) +
+  tm_fill(col = "covid_per_1000", palette = "-viridis", n = 6, title = "COVID CAS per 1k") +
+tm_shape(philly2) +
+  tm_fill(col = "blue", alpha = 0) +
+  tm_borders("gray45")
+
+cases1
+```
+
+### COVID Hospitalization Rate
+
+```{r echo=FALSE}
+#|echo: false
+
+hospital1 <- tm_shape(philly2) +
+  tm_fill(col = "hospital_per_1000", palette = "-viridis", n = 5, title = "COVID Hospitalizations/1000") +
+tm_shape(philly2) +
+  tm_fill(col = "blue", alpha = 0) +
+  tm_borders("gray45")
+
+hospital1
+```
+
+### COVID Deaths
+
+```{r echo=FALSE}
+#|echo: false
+
+deaths1 <- tm_shape(philly2) +
+  tm_fill(col = "deaths_per_1000", palette = "-viridis", n = 5, title = "COVID Fatalities per 1000") +
+tm_shape(philly2) +
+  tm_fill(col = "blue", alpha = 0) +
+  tm_borders("gray45")
+
+deaths1
+```
+
+# Some Brief Modeling
+
+## How To Handle HOLC
+
+As I mentioned in my previous write up there are some series methodological choices to be made on what scale we want to model and how we get our values of interest there. I'm going to try and get everything at the *ZCTA* level. In order to do that I'll show three approaches: centroid joining; largest polygon join; and proportion of population covered. The first two options treat HOLC assignments as categorical, distinct and exclusionary in the sense that each zip code will only be assigned a single HOLC grade. The final option will calculate the proportion of population covered by the intersection of a ZCTA and HOLC polygon and interpolate our values using that population weight. All offer trade-offs that we can discuss.
+
+## Centroid joining
+
+The centroid methods shows an immediate weakness- missiningness. About a third of zip codes within the city do not match to HOLC grades using just the centroid.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+philly_centroid <- st_centroid(philly2) %>% 
+  select(GEOID)
+
+philly_red <- st_transform(philly_red, crs = st_crs(philly2))
+
+philly_centroid <- st_join(philly_centroid, philly_red %>% select(holc_grade)) %>% 
+  rename(holc_centroid = holc_grade)
+
+
+philly2 <- philly2 %>% 
+  left_join(philly_centroid %>% as_tibble() %>% select(-geometry))
+
+red2 <- tm_shape(philly2) +
+  tm_fill(col = "holc_centroid", palette = c("green4", "blue3", "yellow3", "red3"),
+          labels = "holc_centroid", title = "Philly Zips HOLC (Centroid)") +
+  tm_borders("gray50")
+
+red2
+```
+
+There seems to be a positive association with HOLC grades and COVID infections, but with a third of observations missing we're walking on thin ice.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#|echo: false
+#|warning: false
+#|message: false
+
+ggplot(philly2, aes(x = holc_centroid, y = covid_per_1000)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "HOLC Grade", y = "COVID Infection Rate", title = "Seems to be a positive trend between HOLC Grade and COVID Cases")
+```
+
+```{r echo=FALSE, message=FALSE}
+#|echo: false
+#|warning: false
+
+philly2 <- philly2 %>% 
+  mutate(holc_centroid_dummy = if_else(holc_centroid == "D", 0, 1))
+
+cent_mod1 <- lm(covid_per_1000 ~ holc_centroid_dummy, data = philly2)
+
+```
+
+## Largest Polygon
+
+Basic idea is we join polygon-to-polygon and assign the HOLC grade that has the largest overlap with our target zip code.
+
+```{r echo=FALSE, message=FALSE}
+#|echo: false
+#|message: false
+#|warning: false
+
+philly_largest <- st_join(philly2 %>% select(GEOID), 
+                          philly_red %>% select(holc_poly = holc_grade),
+                          largest = TRUE)
+philly2 <- philly2 %>% 
+  left_join(philly_largest %>% as_tibble() %>% select(-geometry))
+
+red3 <- tm_shape(philly2) +
+  tm_fill(col = "holc_poly", palette = c("green4", "blue3", "yellow3", "red3"),
+          labels = "holc_poly", title = "Philly Zips HOLC (Largest Poly)") +
+  tm_borders("gray50")
+
+red3
+```
+
+We largely solve the missinginess problem here, but note that we not have many more "D" graded zips.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#|echo: false
+#|message: false
+#|warning: false
+
+philly2 <- philly2 %>% 
+  mutate(holc_poly_dummy = if_else(holc_poly == "D", 0, 1))
+
+cent_mod2 <- lm(covid_per_1000 ~ holc_poly_dummy, data = philly2)
+
+#box plot for largest poly
+
+ggplot(philly2, aes(x = holc_poly, covid_per_1000)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(x = "HOLC Grade", y = "COVID Case Rate")
+
+```
+
+## HOLC Pop (%)
+
+The basic logic here is a play on other interpolation methods. Briefly, get total population at the block group level, total up estimates of total population from block group to HOLC districts. After that you measure the overlap of HOLC districts (with population data) to zip codes
+
+```{r results='hide', echo=FALSE}
+
+tot_pop <- get_acs(geography = "block group", variables = "B01003_001", 
+                   state = "PA", output = "wide", 
+                   geometry = TRUE, county = "Philadelphia") %>% 
+  st_transform(crs = 26986)
+
+#get intersected polygons and then interpolate population to those
+
+holc_per <- aw_intersect(.data = philly2 %>% 
+                           mutate(zip_area = st_area(geometry)) %>% 
+                           select(GEOID, zip_area), 
+                         source = philly_red, 
+                         areaVar = "holc_area")  %>% 
+  tibble::rowid_to_column("ID_new")
+
+holc_per_pop <- aw_interpolate(holc_per, tid = ID_new, 
+                              source = tot_pop, 
+                              sid = GEOID, weight = "sum", 
+                              extensive = "B01003_001E")
+
+holc_per_pop <- holc_per_pop %>% 
+  mutate(holc_grade2 = if_else(holc_grade != "D", "D", "Less Risky")) %>% 
+  left_join(philly2 %>% as_tibble() %>% select(GEOID, zip_pop = tot_popE.y)) %>% 
+  mutate(pop_weight = B01003_001E/zip_pop)
+
+holc_per_pop <- holc_per_pop %>% 
+  filter(holc_grade2 == "D") %>% 
+  group_by(GEOID) %>% 
+  summarise(pop_weight = sum(pop_weight, na.rm = TRUE))
+
+philly2 <- philly2 %>% 
+  left_join(holc_per_pop %>% as_tibble() %>% select(-geometry))
+
+cent_mod3 <- lm(covid_per_1000 ~ pop_weight, data = philly2)
+
+
+```
+
+```{r echo=FALSE, results='asis'}
+
+stargazer(cent_mod1, cent_mod2, cent_mod3, type = "latex", 
+          title = "Comparative Univariate Regressions", 
+          column.labels = c("Centroid", "Largest Poly", "Pop. Weight"), 
+          digits = 4, header = FALSE)
+```
+
+### Regressions on COVID Death Rates
+
+```{r echo=FALSE, results='asis'}
+
+cent_mod4 <- lm(deaths_per_1000 ~ holc_centroid_dummy, data = philly2)
+cent_mod5 <- lm(deaths_per_1000 ~ holc_poly_dummy, data = philly2)
+cent_mod6 <- lm(deaths_per_1000 ~ pop_weight, data = philly2)
+
+stargazer(cent_mod4, cent_mod5, cent_mod6, type = "latex", 
+          title = "Comparative Univariate Regressions", 
+          column.labels = c("Centroid", "Largest Poly", "Pop. Weight"), 
+          digits = 4, header = FALSE)
+```
+
+```{}
+```
+
+## SVI Regressions
+
+```{r echo=FALSE, results='asis'}
+
+cent_mod4 <- lm(covid_per_1000 ~ RPL_THEMES, data = philly2)
+cent_mod5 <- lm(hospital_per_1000 ~ RPL_THEMES, data = philly2)
+cent_mod6 <- lm(deaths_per_1000 ~ RPL_THEMES, data = philly2)
+
+stargazer(cent_mod4, cent_mod5, cent_mod6, type = "latex", 
+          title = "Comparative SVI Regressions", 
+          column.labels = c("Centroid", "Largest Poly", "Pop. Weight"), 
+          digits = 4, header = FALSE)
+```
+
+```{r echo=FALSE, results='asis'}
+
+
+cent_mod7 <- lm(deaths_per_1000 ~ holc_centroid_dummy + RPL_THEMES,  data = philly2)
+cent_mod8 <- lm(deaths_per_1000 ~ holc_poly_dummy + RPL_THEMES, data = philly2)
+cent_mod9 <- lm(deaths_per_1000 ~ pop_weight + RPL_THEMES, data = philly2)
+
+stargazer(cent_mod7, cent_mod8, cent_mod9, type = "latex", 
+          title = "Comparative SVI, holc Regressions", 
+          column.labels = c("Centroid", "Largest Poly", "Pop. Weight"), 
+          digits = 4, header = FALSE)
 ```
